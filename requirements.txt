@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+gunicorn
 music21
 googletrans
 midi2audio
