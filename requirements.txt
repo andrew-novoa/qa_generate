@@ -3,3 +3,7 @@ uvicorn[standard]
 scamp
 music21
 googletrans
+tempfile
+midi2audio
+shutil
+typing
