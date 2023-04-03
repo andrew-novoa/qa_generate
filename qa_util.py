@@ -748,7 +748,7 @@ def m21_to_xml(m21_stream):
     converted_stream_string = musicXML_exporter.parse()
 
     with tempfile.NamedTemporaryFile(suffix=".xml", dir=xml_files_path, delete=False) as tf:
-        tf.write(converted_stream_string.encode('utf-8'))
+        tf.write(converted_stream_string)
     
     return tf.name
 
