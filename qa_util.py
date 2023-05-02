@@ -1,3 +1,4 @@
+import base64
 import math
 import os
 import random
@@ -32,23 +33,41 @@ function_defaults = {
     }
 
 def call_question_function(function_string, input_user_level, content_override=None):
+    # If content_override is None, set it to an empty dictionary
     if content_override is None:
         content_override = {}
 
+    # Create a dictionary book_map that maps input_user_level[0] to a string
+    # (either "theory", "rhythm", or "listen")
     book_map = {"T": "theory", "R": "rhythm", "L": "listen"}
     book = book_map[input_user_level[0]]
 
+    # Set admin_content to the content_levels dictionary value for the user's
+    # instrument, the book, and the input_user_level
     admin_content = content_levels[user.instrument][book][input_user_level]
+    # Create an empty dictionary function_fills
     function_fills = {}
 
+    # Loop through the default values for the function_string
     for i in range(len(function_defaults[function_string])):
+        # If there is a content_override and the i value is in the content_override
+        # dictionary, set the function_fills dictionary value for i to the
+        # content_override dictionary value for i
         if content_override and str(i) in content_override:
             function_fills[i] = content_override[str(i)]
+        # If there is an admin_content value and the i value is in the
+        # admin_content["generate " + function_string] dictionary, set the
+        # function_fills dictionary value for i to the
+        # admin_content["generate " + function_string] dictionary value for i
         elif admin_content and str(i) in admin_content["generate " + function_string]:
             function_fills[i] = admin_content["generate " + function_string][str(i)]
+        # If neither of the above are true, set the function_fills dictionary
+        # value for i to the function_defaults dictionary value for
+        # function_string and i
         else:
             function_fills[i] = function_defaults[function_string][i]
 
+    # Create a dictionary function_map that maps function_string to a function
     function_map = {
         "note": generate_note,
         "chord": generate_chord,
@@ -61,8 +80,13 @@ def call_question_function(function_string, input_user_level, content_override=N
         "note value": generate_note_value
     }
 
+    # If function_string is in the function_map dictionary, return the function_map
+    # dictionary value for function_string with the values in function_fills as
+    # arguments
     if function_string in function_map:
         return function_map[function_string](*[function_fills[i] for i in range(len(function_defaults[function_string]))])
+    # If the function_string is not in the function_map dictionary, raise a
+    # ValueError with the function_string as a string
     else:
         raise ValueError(f"Unknown function_string: {function_string}")
 
@@ -740,17 +764,21 @@ def generate_prompt_text(question_type, answer_type, language="en"):
     prompt_text_full = prompt_text1 + " and " + prompt_text2
     return prompt_text_full
 
-def m21_to_xml(m21_stream):
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    xml_files_path = os.path.join(base_path, "xml_files")
-
+def m21_to_base64(m21_stream):
+    # Create an exporter object from the musicXML module
     musicXML_exporter = musicxml.m21ToXml.GeneralObjectExporter(m21_stream)
+    # Convert the music21 stream to a musicXML string
+    # Convert the music21 stream to a musicXML string
     converted_stream_string = musicXML_exporter.parse()
-
-    with tempfile.NamedTemporaryFile(suffix=".xml", dir=xml_files_path, delete=False) as tf:
-        tf.write(converted_stream_string)
     
-    return tf.name
+    # Check if the converted stream is already bytes
+    if isinstance(converted_stream_string, bytes):
+        encoded_stream = base64.b64encode(converted_stream_string)
+    else:
+        encoded_stream = base64.b64encode(converted_stream_string.encode('utf-8'))
+    
+    # Return the encoded stream as a string
+    return encoded_stream.decode('utf-8')
 
 def m21_to_wav(m21_stream):
     base_path = os.path.dirname(os.path.abspath(__file__))
@@ -761,6 +789,7 @@ def m21_to_wav(m21_stream):
     wav_files_path = os.path.join(base_path, "wav_files")
 
     with tempfile.NamedTemporaryFile(suffix=".mid", dir=midi_files_path, delete=False) as tf_midi:
+        # Write the Music21 stream to a temporary MIDI file
         m21_stream.write("midi", fp=tf_midi.name)
         converted_midi = tf_midi.name
 
@@ -768,6 +797,7 @@ def m21_to_wav(m21_stream):
     base_name = os.path.splitext(os.path.basename(converted_midi))[0]
     wav_file_path = os.path.join(wav_files_path, f"{base_name}.wav")
 
+    # Convert the MIDI file to a WAV file using FluidSynth
     fs = FluidSynth(soundfont_path)
     fs.midi_to_audio(converted_midi, wav_file_path)
 
@@ -969,7 +999,7 @@ def answer_relative_minor_scale(q_dict, user_level, output="string", mc=False):
     if output == "xml":
         correct_duration = q_dict[2][0].measure(1)[0].duration.quarterLength
         correct_answer = create_scale_stream(correct_answer, correct_duration)
-        correct_answer = m21_to_xml(correct_answer)
+        correct_answer = m21_to_base64(correct_answer)
 
     if not mc:
         return correct_answer
@@ -994,7 +1024,7 @@ def answer_relative_minor_scale(q_dict, user_level, output="string", mc=False):
         if output == "xml":
             wrong_answer = call_question_function("scale", user_level, {"0": [wrong_pitch], "1": [mode_name], "2": correct_duration})[0]
             if wrong_answer.pitches != correct_answer.pitches:
-                wrong_answer = m21_to_xml(wrong_answer)
+                wrong_answer = m21_to_base64(wrong_answer)
                 answer_list.append(wrong_answer)
         else:
             wrong_answer = [str(p.name) for p in scale.AbstractDiatonicScale(mode_name).getRealization(wrong_pitch, 1)]
@@ -1025,7 +1055,7 @@ def answer_diatonic_chord(q_dict, user_level, output="string", mc=False):
         correct_stream = stream.Stream()
         correct_stream.append(diatonic_chord)
         correct_answer = correct_stream
-        correct_answer = m21_to_xml(correct_answer)
+        correct_answer = m21_to_base64(correct_answer)
 
     if not mc:
         return correct_answer
@@ -1045,7 +1075,7 @@ def answer_diatonic_chord(q_dict, user_level, output="string", mc=False):
                 wrong_stream = stream.Stream()
                 wrong_stream.append(wrong_chord)
                 wrong_answer = wrong_stream
-                wrong_answer = m21_to_xml(wrong_answer)
+                wrong_answer = m21_to_base64(wrong_answer)
 
             if wrong_answer not in answer_list:
                 answer_list.append(wrong_answer)
@@ -1074,7 +1104,7 @@ def answer_non_diatonic_chord(q_dict, user_level, output="string", mc=False):
         correct_stream.append(wrong_chord)
         correct_stream.makeNotation()
         correct_answer = correct_stream
-        correct_answer = m21_to_xml(correct_answer)
+        correct_answer = m21_to_base64(correct_answer)
 
     if mc == False:
         return correct_answer
@@ -1099,7 +1129,7 @@ def answer_non_diatonic_chord(q_dict, user_level, output="string", mc=False):
             diatonic_chord_stream = stream.Stream()
             diatonic_chord_stream.append(diatonic_chord)
             diatonic_chord_figure = diatonic_chord_stream
-            diatonic_chord_figure = m21_to_xml(diatonic_chord_figure)
+            diatonic_chord_figure = m21_to_base64(diatonic_chord_figure)
 
         if diatonic_chord_figure not in answer_list:
             answer_list.append(diatonic_chord_figure)
@@ -1115,7 +1145,7 @@ def answer_non_diatonic_chord(q_dict, user_level, output="string", mc=False):
                 another_wrong_chord_stream = stream.Stream()
                 another_wrong_chord_stream.append(another_wrong_chord)
                 another_wrong_chord_figure = another_wrong_chord_stream
-                another_wrong_chord_figure = m21_to_xml(another_wrong_chord_figure)
+                another_wrong_chord_figure = m21_to_base64(another_wrong_chord_figure)
 
             if len(set(another_wrong_chord.pitchNames).intersection(set([p.name for p in current_scale]))) != len(another_wrong_chord.pitchNames):
                 if another_wrong_chord_figure not in answer_list:
@@ -1125,7 +1155,3 @@ def answer_non_diatonic_chord(q_dict, user_level, output="string", mc=False):
         correct_answer_index = answer_list.index(correct_answer) + 1
 
         return answer_list, correct_answer_index
-
-
-    
-
