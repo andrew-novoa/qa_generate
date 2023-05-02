@@ -1,7 +1,7 @@
 import random
 
 from googletrans import Translator
-from music21 import (chord, harmony, interval, key, note, pitch,
+from music21 import (chord, harmony, interval, key, note,
                      scale, stream)
 
 import user
@@ -711,11 +711,11 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 return scale_pitch_list
             
             elif question_dict[0] == "play arp":
-                return m21_to_xml(question_dict[2][1])
+                return m21_to_base64(question_dict[2][1])
 
         elif input_question_type == "audio":
             if question_dict[0] == "play rhythm":
-                return m21_to_xml(question_dict[2])
+                return m21_to_base64(question_dict[2])
 
         elif input_question_type == "note":
             if question_dict[0] == "play pitch":
@@ -728,11 +728,11 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
 
         elif input_question_type == "chord progression":
             if question_dict[0] == "play progression":
-                return m21_to_xml(question_dict[2])
+                return m21_to_base64(question_dict[2])
 
         elif input_question_type == "interval":
             if question_dict[0] == "play interval":
-                return m21_to_xml(question_dict[2][0])
+                return m21_to_base64(question_dict[2][0])
 
         elif input_question_type == "scale":
             scale_pitch_list = [n.name for n in question_dict[2][0].pitches]
@@ -740,13 +740,13 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 return scale_pitch_list
             
         elif input_question_type == "excerpt":
-            return m21_to_xml(question_dict[2])
+            return m21_to_base64(question_dict[2])
 
         elif input_question_type == "rhythm":
-            return m21_to_xml(question_dict[2])
+            return m21_to_base64(question_dict[2])
 
         elif input_question_type == "arpeggio":
-            return m21_to_xml(question_dict[2][1])
+            return m21_to_base64(question_dict[2][1])
 
     def generate_mc_text_answer(input_question_type, question_dict, input_user_level): #complete
 
@@ -1259,14 +1259,14 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 answer_list = []
                 correct_answer = question_dict[2]
                 correct_inversion = correct_answer.measure(1)[0].inversion(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     random_inversion = random.randrange(0, len(correct_answer.pitches), 1)
                     wrong_answer = correct_answer
                     wrong_answer.measure(1)[0].inversion(random_inversion)
                     if random_inversion != correct_inversion:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1285,12 +1285,12 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                     correct_note.duration.quarterLength = correct_duration
                     correct_answer.append(correct_note)
                 correct_answer.makeMeasures()
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = call_question_function("scale", input_user_level, {"0":[correct_mode[0]], "2": correct_duration})[0]
                     if wrong_answer.pitches != correct_mode:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1314,7 +1314,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 correct_note.duration.quarterLength = correct_rhythm_length
                 correct_answer.makeNotation()
                 correct_answer.append(correct_note)
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = stream.Stream()
@@ -1323,7 +1323,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                     wrong_answer.append(wrong_note)
                     if wrong_note.duration.quarterLength != correct_rhythm_length:
                         wrong_answer.makeNotation()
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1334,13 +1334,13 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 answer_list = []
                 correct_answer = question_dict[2]
                 correct_note = question_dict[2].measure(1)[0].pitch
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = call_question_function("note", input_user_level=input_user_level)
                     wrong_note = wrong_answer.measure(1)[0].pitch
                     if wrong_note != correct_note:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1351,14 +1351,14 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 answer_list = []
                 correct_answer = question_dict[2]
                 correct_inversion = correct_answer.measure(1)[0].inversion(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     random_inversion = random.randrange(0, len(correct_answer.pitches), 1)
                     wrong_answer = correct_answer
                     wrong_answer.measure(1)[0].inversion(random_inversion)
                     if random_inversion != correct_inversion:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1368,14 +1368,14 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 answer_list = []
                 correct_answer = question_dict[2]
                 correct_chord = correct_answer.measure(1)[0].transpose(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     random_transpo = random.randrange(-6, 6, 1)
                     wrong_answer = correct_answer
                     wrong_chord = wrong_answer.measure(1)[0].transpose(random_transpo)
                     if wrong_chord != correct_chord:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1385,7 +1385,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             if question_dict[0] == "is transposition":
                 answer_list = []
                 correct_answer = question_dict[2].transpose(random.randrange(-6, 6, 1))
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 major_scale = scale.DiatonicScale(question_dict[2].keySignature.asKey().getTonic())
                 while len(answer_list) != 4:
@@ -1412,7 +1412,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
 
                                 wrong_stream.measure(temp_measure.measureNumber).insert(chord_reharm.offset, temp_chord)
 
-                    wrong_stream = m21_to_xml(wrong_stream)
+                    wrong_stream = m21_to_base64(wrong_stream)
                     answer_list.append(wrong_stream)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1421,13 +1421,13 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             elif question_dict[0] == "specific transposition":
                 answer_list = []
                 correct_answer = question_dict[2].transpose(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     random_interval = random.randrange(-6, 6, 1)
                     if question_dict[3].semitones != random_interval:
                         wrong_answer = question_dict[2].transpose(random.randrange(-6, 6, 1))
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1437,13 +1437,13 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             if question_dict[0] == "correct transposition":
                 answer_list = []
                 correct_answer = question_dict[2][0].transpose(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     random_interval = random.randrange(-6, 6, 1)
                     if question_dict[3].semitones != random_interval:
                         wrong_answer = question_dict[2][0].transpose(random_interval)
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1463,12 +1463,12 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                     correct_note.duration.quarterLength = correct_duration
                     correct_answer.append(correct_note)
                 correct_answer.makeMeasures()
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = call_question_function("scale", input_user_level, {"0":[correct_mode[0]], "2":correct_duration})[0]
                     if wrong_answer.pitches != correct_mode:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1487,12 +1487,12 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             if question_dict[0] == "what measure":
                 answer_list = []
                 correct_answer = stream.Stream(question_dict[2].measure(question_dict[3]))
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = call_question_function("excerpt", input_user_level, {"2":1})
                     if wrong_answer.flatten().notesAndRests != correct_answer.flatten().notesAndRests:
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1501,14 +1501,14 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             elif question_dict[0] == "what beat":
                 answer_list = []
                 correct_answer = stream.Stream(question_dict[3])
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = stream.Stream()
                     wrong_note = random.choice(question_dict[2].flatten().notesAndRests)
                     if wrong_note != question_dict[3]:
                         wrong_answer.append(wrong_note)
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1523,7 +1523,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 correct_note.duration.quarterLength = correct_rhythm_length
                 correct_answer.makeNotation()
                 correct_answer.append(correct_note)
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_answer = stream.Stream()
@@ -1532,7 +1532,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                     wrong_answer.append(wrong_note)
                     if wrong_note.duration.quarterLength != correct_rhythm_length:
                         correct_answer.makeNotation()
-                        wrong_answer = m21_to_xml(wrong_answer)
+                        wrong_answer = m21_to_base64(wrong_answer)
                         answer_list.append(wrong_answer)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1542,12 +1542,12 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
             if question_dict[0] == "correct transposition":
                 answer_list = []
                 correct_answer = question_dict[2][0].transpose(random.randrange(-6, 6, 1))
-                correct_answer = m21_to_xml(correct_answer)
+                correct_answer = m21_to_base64(correct_answer)
                 answer_list.append(correct_answer)
                 while len(answer_list) != 4:
                     wrong_arp = call_question_function("arpeggio", input_user_level=input_user_level)[0]
                     if wrong_arp.pitches != correct_answer.pitches:
-                        wrong_arp = m21_to_xml(wrong_arp)
+                        wrong_arp = m21_to_base64(wrong_arp)
                         answer_list.append(wrong_arp)
                 random.shuffle(answer_list)
                 correct_answer_index = answer_list.index(correct_answer)
@@ -1926,13 +1926,40 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
     return new_answer
     
 
-### 0 = prompt text, 1 = question render (if included), 2 = question text, 3 = answer elements (if multiple choice, will be tuple)
 def generate_screen(question_type, answer_type, user_level, user_language="en"):
+
+    question_structure = {
+        "text": {
+            "type": "text",
+            "question_text_en": "string",
+            "question_text_es": "string",
+            "prompt_text_en": "string",
+            "prompt_text_es": "string",
+            },
+        "audio": {
+            "type": "audio",
+            "question_text_en": "string",
+            "question_text_es": "string",
+            "prompt_text_en": "string",
+            "prompt_text_es": "string",
+            "audio_url": "link"
+            },
+        "xml": {
+            "type": "xml",
+            "question_text_en": "string",
+            "question_text_es": "string",
+            "prompt_text_en": "string",
+            "prompt_text_es": "string",
+            "xml_data": "base64"
+            }
+    }
     
     def translate_text(text, language):
         if language == "es":
             translator = Translator()
             translation = translator.translate(text, dest=language)
+            if type(text) == list:
+                return [t.text for t in translation]
             return translation.text
         return text
 
@@ -1950,15 +1977,54 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
         question_render = m21_to_wav(finished_question[0] if isinstance(finished_question, tuple) else finished_question)
     else:
         finished_question = question_elements[2]
-        question_render = m21_to_xml(finished_question[0] if isinstance(finished_question, tuple) else finished_question)
-
-
-    # Translate question text
-    question_string = translate_text(question_elements[1], user_language)
+        question_render = m21_to_base64(finished_question[0] if isinstance(finished_question, tuple) else finished_question)
 
     # Generate answer
     answer_elements = generate_answer(answer_type, question_type, question_elements, input_user_level=user_level)
 
-    return prompt_text, question_render, question_string, answer_elements
+    spanish_prompt, spanish_text = translate_text([prompt_text, question_elements[1]], "es")
+
+    # Create question dictionary
+    question_type = question_type if question_type in ["text", "audio"] else "xml"
+    question_dict = question_structure[question_type]
+    question_dict.update({
+        "question_text_en": question_elements[1],
+        "question_text_es": spanish_text,
+        "prompt_text_en": prompt_text,
+        "prompt_text_es": spanish_prompt,
+        "audio_url" if question_type == "audio" else "xml_data": question_render
+    })
+
+    # Create answer dictionary
+    answer_dict = {"type": answer_type, "answers": []}
+
+    def create_answer(answer_type, answer_elements):
+        def create_mc_answer(num, answer, is_correct):
+            return {
+                "id": num,
+                "text_en": answer,
+                "text_es": translate_text(answer, "es"),
+                "correct_answer": is_correct
+            }
+        if answer_type == "text":
+            return {"text_en": answer_elements, "text_es": translate_text(answer_elements, "es")}
+        elif answer_type.startswith("mc "):
+            is_mc_audio = answer_type == "mc audio"
+            return [
+                create_mc_answer(num, answer, num == answer_elements[1])
+                if answer_type == "mc text"
+                else {"audio_url" if is_mc_audio else "xml_data": answer, "correct_answer": num == answer_elements[1]}
+                for num, answer in enumerate(answer_elements[0])
+            ]
+        elif answer_type == "piano":
+            return {"xml_data": answer_elements}
+        elif answer_type == "record":
+            return {"metronome": False, "xml_data": answer_elements}
+        else:
+            return None
+
+    answer_dict["answers"] = create_answer(answer_type, answer_elements)
+
+    return question_dict, answer_dict
 
 
