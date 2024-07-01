@@ -2,11 +2,13 @@ import base64
 import math
 import os
 import random
+import re
 import tempfile
 
 from midi2audio import FluidSynth
 from music21 import (chord, clef, harmony, interval, key, meter, musicxml,
                      note, roman, scale, stream)
+from pianoplayer.core import apply_fingerings
 
 import user
 from levels import content_levels
@@ -92,9 +94,6 @@ def call_question_function(function_string, input_user_level, content_override=N
 
 ### Main Functions ###
 
-def generate_tone():
-    pass
-
 def generate_note(specific_note = None, specific_duration = None, stand_alone = False):
     new_note = note.Note()
     if specific_note != None:
@@ -122,10 +121,11 @@ def generate_note(specific_note = None, specific_duration = None, stand_alone = 
     else:
         return new_note
 
-def generate_chord(chord_root_list = [], chord_quality_list = [], stand_alone = False): #figure out voicings and inversions, also create method to create certain type of chord (use this as an actual function)
+def generate_chord(chord_root_list = [], chord_quality_list = [], stand_alone = False): #figure out voicings and inversions
     
     if len(chord_root_list) != 0:
-        root_note = note.Note(random.choice(chord_root_list))
+        random_root = random.choice(chord_root_list)
+        root_note = note.Note(random_root + "4") if type(random_root) == str else note.Note(random_root)
     else:
         root_note = note.Note()
         root_note.pitch.midi = random.randrange(57, 73, 1)
@@ -157,183 +157,161 @@ def generate_chord(chord_root_list = [], chord_quality_list = [], stand_alone = 
     else:
         return new_chord
 
-def generate_chord_progression(input_key_sig = None, non_diatonic = False, specified_length=None, output_type = "written"):
+def generate_chord_progression(input_key_sig = [], diatonic = True, score_length = None, output_type = "written", input_time_sig = [[], []], max_num_extensions = 1, min_division_level = 3):
 
-    time_elements = generate_time_elements()
-    time_sig = time_elements[0]
-    meter_division_count = time_elements[1]
-    meter_sequence = time_elements[2]
-    prime_numbers = [3, 5, 7, 11, 13]
+    def calculate_divisions(meter_sequence, meter_division_count, min_division_level = 3):
+        div_list = []
+        prime_numbers = [3, 5, 7, 11, 13, 17]
 
-    #create key signature
-    if input_key_sig != None:
-        key_sig = key.KeySignature(input_key_sig)
-    else:
-        key_sig = key.KeySignature(random.randrange(-7, 7, 1))
-    
+        def get_duration(division):
+            return (int(division[0]) / int(division[2])) * 4
+
+        full_measure_duration = sum(get_duration(div) for div in meter_sequence)
+
+        if meter_division_count == 2 and min_division_level > 1:
+            first_half_duration = get_duration(meter_sequence[0])
+            second_half_duration = get_duration(meter_sequence[1])
+
+            # Ensuring that the sum of durations in the divisions does not exceed the full measure duration
+            if first_half_duration + second_half_duration <= full_measure_duration:
+                div_list.extend([[first_half_duration, second_half_duration], [first_half_duration, second_half_duration]])
+
+            if int(meter_sequence[0][0]) in prime_numbers or int(meter_sequence[1][0]) in prime_numbers and min_division_level > 2:
+                durations = [math.ceil(int(div[0]) / 2) for div in meter_sequence]
+                quarter_lengths = [(duration / int(meter_sequence[0][2])) * 4 for duration in durations]
+
+                # Same check applied here
+                if sum(quarter_lengths) <= full_measure_duration:
+                    div_list.extend([[quarter_lengths[0], quarter_lengths[1]], [quarter_lengths[0], quarter_lengths[1]]])
+
+        elif meter_division_count == 3 and min_division_level > 1:
+            third_durations = [get_duration(div) for div in meter_sequence]
+            first_half_duration = third_durations[0] + third_durations[1]
+            second_half_duration = third_durations[1] + third_durations[2]
+
+            # Similar checks applied here
+            if first_half_duration + second_half_duration <= full_measure_duration:
+                div_list.extend([[first_half_duration, second_half_duration], [first_half_duration, second_half_duration]])
+
+            if min_division_level > 2:
+                if third_durations[0] + second_half_duration <= full_measure_duration:
+                    div_list.append([third_durations[0], second_half_duration])
+
+                if first_half_duration + third_durations[2] <= full_measure_duration:
+                    div_list.append([first_half_duration, third_durations[2]])
+
+                if sum(third_durations) <= full_measure_duration:
+                    div_list.append(third_durations)
+
+        elif meter_division_count == 4 and min_division_level > 1:
+            quarter_lengths = [get_duration(div) for div in meter_sequence]
+            first_half_duration = quarter_lengths[0] + quarter_lengths[1]
+            second_half_duration = quarter_lengths[2] + quarter_lengths[3]
+
+            # Similar checks applied here as well
+            if min_division_level > 2:
+                if first_half_duration + second_half_duration <= full_measure_duration:
+                    div_list.extend([[first_half_duration, second_half_duration], [first_half_duration, second_half_duration]])
+
+                if quarter_lengths[0] + quarter_lengths[1] + second_half_duration <= full_measure_duration:
+                    div_list.append([quarter_lengths[0], quarter_lengths[1], second_half_duration])
+
+                if first_half_duration + quarter_lengths[2] + quarter_lengths[3] <= full_measure_duration:
+                    div_list.append([first_half_duration, quarter_lengths[2], quarter_lengths[3]])
+
+                if sum(quarter_lengths) <= full_measure_duration:
+                    div_list.append(quarter_lengths)
+
+        # Adding the full measure duration to div_list as it's valid for all scenarios
+        div_list.extend([full_measure_duration, full_measure_duration, full_measure_duration, full_measure_duration, full_measure_duration, full_measure_duration])
+
+        return div_list
+
+    def create_slash(chord_duration, altered_pitches):
+        if user_clef == clef.TrebleClef():
+            if "B-" in altered_pitches:
+                slash_note = note.Note("B-4")
+                slash_note.pitch.accidental.displayStatus = False
+            else:
+                slash_note = note.Note("B4")
+        else:
+            if "D-" in altered_pitches:
+                slash_note = note.Note("D-4")
+                slash_note.pitch.accidental.displayStatus = False
+            else:
+                slash_note = note.Note("D4")
+        slash_note.notehead = "slash"
+        slash_note.duration.quarterLength = chord_duration
+        return slash_note
+
+    def insert_chord(chord_progression, measure_number, offset, chord_object, duration, output_type = "written"):
+        # Calculate remaining duration in the measure
+        remaining_duration = chord_progression.timeSignature.barDuration.quarterLength - offset
+
+        # Adjust the duration if it exceeds the remaining duration in the measure
+        if duration > remaining_duration:
+            duration = remaining_duration
+
+        chord_object.duration.quarterLength = duration
+        inserted_notes = None
+
+        if len(chord_progression.measure(measure_number).getElementsByOffset(offset)) > 0:
+            chord_progression.measure(measure_number).replace(offset, chord_object)
+        else:
+            chord_progression.measure(measure_number).insert(offset, chord_object)
+            
+        if output_type == "slashes":
+            altered_pitches = [p.name for p in chord_progression.keySignature.alteredPitches]
+            inserted_notes = create_slash(duration, altered_pitches)
+            chord_progression.measure(measure_number).insert(offset, inserted_notes)
+        elif output_type == "written":
+            inserted_notes = chord.Chord(chord_object.pitches, duration = chord_object.duration)
+            chord_progression.measure(measure_number).insert(offset, inserted_notes)
+        elif output_type == "symbols":
+            inserted_notes = note.Rest(chord_object.duration.quarterLength)
+            chord_progression.measure(measure_number).insert(offset, inserted_notes)
+        
+        updated_offset = chord_progression.measure(measure_number).offset + offset + duration
+        return updated_offset if updated_offset < chord_progression.timeSignature.barDuration.quarterLength else 0, chord_object, inserted_notes
+
+    ### generate key signature, time signature, tonic and dominant chords ###
+    key_sig = key.Key(random.choice(input_key_sig) if len(input_key_sig) > 0 else random.choice(["C", "G", "D", "A", "E", "B", "F#", "G-", "D-", "A-", "E-", "B-", "F"]))
+    time_sig, meter_division_count, meter_division = generate_time_elements(input_time_sig[0], input_time_sig[1]) if (len(input_time_sig[0]) + len(input_time_sig[1])) > 1 else generate_time_elements()
     major_scale = scale.MajorScale(key_sig.asKey("major").tonic)
     tonic_chord = generate_chord([major_scale.getTonic().name], [""])
     dom_chord = generate_chord([major_scale.getDominant().name], [""])
 
-    ### generate random measures with tonic and dominant chords ###
-    original_progression = stream.Stream()
-    original_progression.keySignature = key_sig
-    original_progression.timeSignature = time_sig
-
-    reharmed_progression = stream.Stream()
-    reharmed_progression.keySignature = key_sig
-    reharmed_progression.timeSignature = time_sig
-
-    if specified_length != None:
-        if type(specified_length) == list:
-            number_of_measures = random.choice(specified_length)
-        else:
-            number_of_measures = specified_length
-    else:
-        number_of_measures = random.randrange(1, 4)
-
+    ### generate stream and number of measures###
+    chord_progression = stream.Stream()
+    number_of_measures = random.choice(score_length) if type(score_length) == list else score_length or random.randrange(1, 4)
     for m in range(1, number_of_measures + 1):
-        original_progression.append(stream.Measure(number = m))
-        reharmed_progression.append(stream.Measure(number = m))
+        chord_progression.append(stream.Measure(number = m))
+    chord_progression.keySignature = key_sig
+    chord_progression.timeSignature = time_sig
 
-    #distribute chords throughout measures
-    two_div_list = []
-    three_div_list = []
-    four_div_list = []
-    if meter_division_count == 2:
-        full_measure_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) + (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7]))) * 4
-        first_half_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3]))) * 4
-        second_half_duration = ((int(str(meter_sequence)[5]) / int(str(meter_sequence)[7]))) * 4
-        two_div_list.append(full_measure_duration)
-        two_div_list.append([first_half_duration, second_half_duration])
-        if int(str(meter_sequence)[1]) in prime_numbers or int(str(meter_sequence)[5]) in prime_numbers:
-            first_quarter_duration = math.ceil(int(str(meter_sequence)[1]) / 2)
-            one_qd_quarter_length = (first_quarter_duration / int(str(meter_sequence)[3])) * 4
-            second_quarter_duration = int(str(meter_sequence)[1]) - first_quarter_duration
-            two_qd_quarter_length = (second_quarter_duration / int(str(meter_sequence)[3])) * 4
-            third_quarter_duration = math.ceil(int(str(meter_sequence)[5]) / 2)
-            three_qd_quarter_length = (third_quarter_duration / int(str(meter_sequence)[3])) * 4
-            fourth_quarter_duration = int(str(meter_sequence)[5]) - third_quarter_duration
-            four_qd_quarter_length = (fourth_quarter_duration / int(str(meter_sequence)[3])) * 4
-            two_div_list.append([one_qd_quarter_length, two_qd_quarter_length, second_half_duration])
-            two_div_list.append([first_half_duration, three_qd_quarter_length, four_qd_quarter_length])
-            two_div_list.append([one_qd_quarter_length, two_qd_quarter_length, three_qd_quarter_length, four_qd_quarter_length])
-
-    elif meter_division_count == 3:
-        full_measure_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) + (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7])) + (int(str(meter_sequence)[9]) / int(str(meter_sequence)[11]))) * 4
-        first_half_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) + (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7]))) * 4
-        second_half_duration = ((int(str(meter_sequence)[5]) / int(str(meter_sequence)[7])) + (int(str(meter_sequence)[9]) / int(str(meter_sequence)[11]))) * 4
-        first_third_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3]))) * 4
-        second_third_duration = ((int(str(meter_sequence)[5]) / int(str(meter_sequence)[7]))) * 4
-        third_third_duration = ((int(str(meter_sequence)[9]) / int(str(meter_sequence)[11]))) * 4
-        three_div_list.append(full_measure_duration)
-        three_div_list.append([first_half_duration, second_half_duration])
-        three_div_list.append([first_third_duration, second_half_duration])
-        three_div_list.append([first_half_duration, third_third_duration])
-        three_div_list.append([first_third_duration, second_third_duration, third_third_duration])
-
-    elif meter_division_count == 4:
-        full_measure_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) + (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7])) + (int(str(meter_sequence)[9]) / int(str(meter_sequence)[11])) + (int(str(meter_sequence)[13]) / int(str(meter_sequence)[15]))) * 4
-        first_half_duration = ((int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) + (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7]))) * 4
-        second_half_duration = ((int(str(meter_sequence)[9]) / int(str(meter_sequence)[11])) + (int(str(meter_sequence)[13]) / int(str(meter_sequence)[15]))) * 4
-        one_qd_quarter_length = (int(str(meter_sequence)[1]) / int(str(meter_sequence)[3])) * 4
-        two_qd_quarter_length = (int(str(meter_sequence)[5]) / int(str(meter_sequence)[7])) * 4
-        three_qd_quarter_length = (int(str(meter_sequence)[9]) / int(str(meter_sequence)[11])) * 4
-        four_qd_quarter_length = (int(str(meter_sequence)[13]) / int(str(meter_sequence)[15])) * 4
-        four_div_list.append(full_measure_duration)
-        four_div_list.append([first_half_duration, second_half_duration])
-        four_div_list.append([one_qd_quarter_length, two_qd_quarter_length, second_half_duration])
-        four_div_list.append([first_half_duration, three_qd_quarter_length, four_qd_quarter_length])
-        four_div_list.append([one_qd_quarter_length, two_qd_quarter_length, three_qd_quarter_length, four_qd_quarter_length])
-
-
+    # Distribute chords throughout measures
     tonic_or_dom = [tonic_chord, dom_chord]
     for c in range(number_of_measures, 0, -1):
-        if meter_division_count == 2:
-            list_select = two_div_list
-        elif meter_division_count == 3:
-            list_select = three_div_list
-        elif meter_division_count == 4:
-            list_select = four_div_list
-
+        previous_chord = None
+        previous_notation = None
         offset_count = 0
-        random_division = random.choice(list_select)
-        if type(random_division) != float:
-            for div in random_division:
-                random_function_choice = chord.Chord(random.choice(tonic_or_dom).pitches)
-                random_function_choice.duration.quarterLength = div
-                original_progression.measure(c).insert(offset_count, random_function_choice)
-                offset_count += random_function_choice.duration.quarterLength
-        else:
-            random_function_choice = chord.Chord(random.choice(tonic_or_dom).pitches)
-            random_function_choice.duration.quarterLength = random_division               
-            original_progression.measure(c).insert(offset_count, random_function_choice)
-            offset_count += random_function_choice.duration.quarterLength
+        divisions = calculate_divisions(meter_division, meter_division_count, min_division_level)
+        random_division = random.choice(divisions)
+        for div in random_division if isinstance(random_division, list) else [random_division]:
+            selected_chord = chord.Chord(random.choice(tonic_or_dom).pitches)
+            selected_chord.duration.quarterLength = div
+            reharmed_chord = reharm_chord(selected_chord, major_scale, previous_chord, diatonic, max_num_extensions)
+            if reharmed_chord is None:
+                if previous_chord is not None:
+                    previous_chord.duration.quarterLength += div ## alter previous chord duration
+                if previous_notation is not None:
+                    previous_notation.duration.quarterLength += div
+                offset_count += div
+                continue
+            for single_chord in reharmed_chord if len(reharmed_chord) == 2 else [reharmed_chord]:
+                offset_count, previous_chord, previous_notation = insert_chord(chord_progression, c, offset_count, single_chord, single_chord.duration.quarterLength, output_type)
 
-    ### iterate through original progression and reharm ###
-    for temp_measure in original_progression:
-        if temp_measure.measureNumber != None:
-            for chord_reharm in reversed(temp_measure):
-                temp_chord = chord_reharm.simplifyEnharmonics()
-                temp_chord.duration.quarterLength = chord_reharm.duration.quarterLength
-                new_dom = None
-
-                for n in range(0, 4): #how many iterations
-
-                    reharm_choices = ["thirds", "thirds", "quality", "tritone", "add extensions", "retroactive dominant", "retroactive dominant"]
-                    if non_diatonic == False:
-                        reharm_choices.remove("quality")
-                        reharm_choices.remove("tritone")
-                    random_choice = random.choice(reharm_choices)
-
-                    if random_choice == "thirds":
-                        temp_chord = move_in_thirds(temp_chord, major_scale, random.randrange(-1, 2, 1), random.randrange(1, 3, 1))
-                    elif random_choice == "quality":
-                        temp_chord = change_quality(temp_chord)
-                    elif random_choice == "add extensions":
-                        temp_chord = add_extensions(temp_chord, major_scale, non_diatonic)
-                    elif random_choice == "tritone":
-                        if chord_reharm == dom_chord:
-                            temp_chord = tritone_sub(temp_chord)
-                    elif random_choice == "retroactive dominant":
-                        if chord_reharm.duration.quarterLength >= 2:
-                            two_chords = retroactive_dom(temp_chord, chord_reharm.duration.quarterLength, major_scale, non_diatonic)
-                            temp_chord = two_chords[1]
-                            new_dom = two_chords[0]
-
-                temp_chord = fix_chord_spelling(temp_chord)
-
-                ### three outputs: written chords, chord slashes, chord symbols ###
-                if output_type != "written": #add chord symbols
-                    chord_symbol = harmony.chordSymbolFromChord(temp_chord)
-                    if new_dom != None:
-                        new_dom_chord_symbol = harmony.chordSymbolFromChord(new_dom)
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset + temp_chord.duration.quarterLength, chord_symbol)
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, new_dom_chord_symbol)
-                    else:
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, chord_symbol)
-
-                    if output_type == "slashes": #add slash notes
-                        slash_note = note.Note("B4") #will need to check clef
-                        slash_note.notehead = "slash"
-                        slash_note.duration.quarterLength = temp_chord.duration.quarterLength
-                        if new_dom != None:
-                            extra_slash_note = note.Note("B4")
-                            extra_slash_note.notehead = "slash"
-                            extra_slash_note.duration.quarterLength = new_dom.duration.quarterLength
-                            reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset + temp_chord.duration.quarterLength, slash_note)
-                            reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, extra_slash_note)
-                        else:
-                            reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, slash_note)
-
-                else:
-                    if new_dom == None: #write out full chords
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, temp_chord)
-                    else:
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset + temp_chord.duration.quarterLength, temp_chord)
-                        reharmed_progression.measure(temp_measure.measureNumber).insert(chord_reharm.offset, new_dom)
-
-    return reharmed_progression
+    return chord_progression
 
 def generate_interval(start_pitch = None, specific_interval = [], specific_duration = None, stand_alone = True):
     if len(specific_interval) != 0:
@@ -388,17 +366,17 @@ def generate_scale(scale_tonic_list = [], mode_list = [], specified_duration=Non
     else:
         mode_select = master_scale_dict[random.choice(scale_key_list)]
 
-    scale_object = mode_select.getRealization(root_note.pitch, 1)
-    new_scale_string_form = [str(scale_note) for scale_note in scale_object]
-    if sum(s.count('-') for s in new_scale_string_form) >= len(scale_object) or sum(s.count('#')  for s in new_scale_string_form) >= len(scale_object):
+    scale_pitches = mode_select.getRealization(root_note.pitch, 1)
+    new_scale_string_form = [str(scale_note) for scale_note in scale_pitches]
+    if sum(s.count('-') for s in new_scale_string_form) >= len(scale_pitches) or sum(s.count('#')  for s in new_scale_string_form) >= len(scale_pitches):
         note_respell = True
     else:
-        if scale_object[0].name == "F#" and random.choice([0, 1]) == 1:
+        if scale_pitches[0].name == "F#" and random.choice([0, 1]) == 1:
             note_respell = True
         else:
             note_respell = False
 
-    for n in scale_object:
+    for n in scale_pitches:
         if note_respell == True:
             temp_note = note.Note(n.getEnharmonic())
         else:
@@ -406,27 +384,16 @@ def generate_scale(scale_tonic_list = [], mode_list = [], specified_duration=Non
         temp_note.duration.quarterLength = duration_select
         new_stream.append(temp_note)
 
-    return new_stream.makeMeasures(), mode_select, scale_object
+    return new_stream.makeMeasures(), mode_select, scale_pitches
 
-def generate_excerpt(input_key_sig = None, non_diatonic = False, input_length=None):
+def generate_excerpt(input_key_sig = [], diatonic = True, score_length=None, include_chords=True, input_time_sig = [[], []], melody_subdivision = 4, chord_subdivision_level = 3):
     
-    starter_progression = generate_chord_progression(input_key_sig, non_diatonic, specified_length=input_length, output_type="symbols")
+    chord_progression = generate_chord_progression(input_key_sig, diatonic, score_length=score_length, output_type="symbols", input_time_sig=input_time_sig, min_division_level=chord_subdivision_level)
 
-    new_stream = stream.Stream()
+    excerpt = generate_full_melody(subdivision = melody_subdivision, input_chord_progression = chord_progression, diatonic=diatonic)
+    excerpt = excerpt.makeNotation()
 
-    new_stream.timeSignature = starter_progression.timeSignature
-    new_stream.keySignature = starter_progression.keySignature
-
-    for excerpt_measure in starter_progression:
-        measure_count = 0
-        if excerpt_measure.measureNumber != None:
-            measure_count += 1
-            new_measure = stream.Measure(number=measure_count)
-            new_stream.append(new_measure)
-            for excerpt_chord in excerpt_measure:
-                new_stream.measure(measure_count).insert(excerpt_chord.offset, note.Note(random.choice(excerpt_chord.pitches)))
-
-    return new_stream
+    return stream.Score(excerpt)
 
 def generate_rhythm(denominator_list = [], numerator_list = [], number_of_measures=None, smallest_value=0.25):
     new_stream = stream.Stream()
@@ -549,177 +516,699 @@ def generate_note_value(specific_note_values=[], rest_or_note=None):
 
     return new_stream, new_note
 
-
 ### Secondary Functions ###
 
-def move_in_thirds(input_chord, input_scale, direction, iterate):
-    # will have to figure out which mode is closest to original key
-    input_scale = scale.DiatonicScale(input_chord[0])
-    if direction == -1:
-        new_root = input_scale.nextPitch(input_chord[0].nameWithOctave, scale.Direction.DESCENDING, stepSize = 2 * iterate)
-    elif direction == 1:
-        new_root = input_scale.nextPitch(input_chord[0].nameWithOctave, scale.Direction.ASCENDING, stepSize = 2 * iterate)
-    elif direction == 0:
+def generate_chord_scale(chord_object=None, key_sig_or_scale=None, previous_chord_scale_pitches=None, diatonic=False):
+    common_notes_ratio_threshold = 0.05
+
+    def select_best_scale_type(chord_object, chord_quality, key_sig_or_scale=None, previous_chord_scale_pitches=None):
+        possible_scale_types = chord_scale_dict[chord_quality]
+        best_scale_types_for_key_signature = []
+        highest_key_sig_common_note_ratio = 0
+
+        if key_sig_or_scale is not None:
+            key_signature_pitches = add_enharmonic_equivalents(key_sig_or_scale.getScale().getPitches() if 'Scale' not in key_sig_or_scale.classSet else key_sig_or_scale.pitches)
+            for scale_type in possible_scale_types:
+                scale_realization = master_scale_dict[scale_type].getRealization(chord_object.root(), 1)
+                scale_type_pitches = add_enharmonic_equivalents(scale_realization)
+                common_notes_ratio = len(set(key_signature_pitches).intersection(scale_type_pitches)) / len(scale_realization)
+                if abs(common_notes_ratio - highest_key_sig_common_note_ratio) < common_notes_ratio_threshold:
+                    best_scale_types_for_key_signature.append(scale_type)
+                elif common_notes_ratio > highest_key_sig_common_note_ratio:
+                    highest_key_sig_common_note_ratio = common_notes_ratio
+                    best_scale_types_for_key_signature = [scale_type]
+
+        if previous_chord_scale_pitches is not None and len(best_scale_types_for_key_signature) > 1:
+            previous_chord_pitches = add_enharmonic_equivalents(previous_chord_scale_pitches)
+            best_scale_types_for_chord_progression = []
+            highest_previous_chord_common_note_ratio = 0
+
+            for scale_type in best_scale_types_for_key_signature:
+                scale_realization = master_scale_dict[scale_type].getRealization(chord_object.root(), 1)
+                scale_type_pitches = add_enharmonic_equivalents(scale_realization)
+                common_notes_ratio = len(set(previous_chord_pitches).intersection(scale_type_pitches)) / len(scale_realization)
+                if abs(common_notes_ratio - highest_previous_chord_common_note_ratio) < common_notes_ratio_threshold:
+                    best_scale_types_for_key_signature.append(scale_type)
+                elif common_notes_ratio > highest_previous_chord_common_note_ratio:
+                    highest_previous_chord_common_note_ratio = common_notes_ratio
+                    best_scale_types_for_key_signature = [scale_type]
+
+            if best_scale_types_for_chord_progression:
+                return random.choice(best_scale_types_for_chord_progression)
+
+        return random.choice(best_scale_types_for_key_signature)
+
+    if diatonic:
+        if 'Scale' not in key_sig_or_scale.classSet:
+            key_sig_or_scale = key_sig_or_scale.getScale()
+        return key_sig_or_scale.tonic, key_sig_or_scale.name, key_sig_or_scale.getPitches()
+    chord_scale_tonic = chord_object.root()
+    chord_quality = get_chord_quality(chord_object)
+    chord_scale_name = select_best_scale_type(chord_object, chord_quality=chord_quality, key_sig_or_scale=key_sig_or_scale, previous_chord_scale_pitches=previous_chord_scale_pitches)
+    starting_scale_pitch = chord_object.root()
+    starting_scale_pitch.octave = 4
+    chord_scale_pitches = [m for m in master_scale_dict[chord_scale_name].getRealization(chord_object.root(), 1, minPitch=starting_scale_pitch)]
+    return chord_scale_tonic, chord_scale_name, chord_scale_pitches
+
+def generate_full_melody(subdivision=4, input_chord_progression=None, diatonic=False):    
+    def compatible_pitches(chord_symbols, chord_scale_pitches, tone_type):
+        if tone_type == "chord tone":
+            chord_pitches_sets = [set(chord_symbol.pitchNames) for chord_symbol in chord_symbols]
+            good_pitches = chord_scale_pitches.intersection(*chord_pitches_sets)  # Intersection of all sets
+        else:
+            remove_notes = set()
+            if tone_type == "downbeat non-chord tone":
+                for chord_symbol in chord_symbols:
+                    if get_chord_quality(chord_symbol) not in ["7b9", "7b9#5", "+7b9"]:
+                        remove_notes |= set()
+                        for c in chord_symbol.pitchNames:
+                            for i in chord_scale_pitches:
+                                minor_second_check = interval.Interval(pitch.Pitch(c), pitch.Pitch(i)).semitones
+                                if minor_second_check > 12:
+                                    minor_second_check = minor_second_check - 12
+                                if minor_second_check == 1:
+                                    remove_notes.add(i)
+            good_pitches = chord_scale_pitches - remove_notes  # Difference of sets
+            for chord_symbol in chord_symbols:
+                good_pitches -= set(chord_symbol.pitchNames)
+            
+        return list(good_pitches) if good_pitches else list(chord_scale_pitches)
+
+    def note_settings(rhythmic_duration_list, rhythmic_duration, offset_list, offset_count, previous_note, previous_measure, last_measure=False):
+        offset_list = offset_list[:-1]
+        tone_type_choices = ["chord tone", "chord tone", "downbeat non-chord tone", "offbeat non-chord tone"]
+        note_or_rest_choices = ["note", "note", "rest", "note", "note", "note"]
+
+        if rhythmic_duration == sum(rhythmic_duration_list):
+            tone_type = "chord tone"
+            note_or_rest = "note"
+            return tone_type, note_or_rest
+        
+        if last_measure and "rest" in note_or_rest_choices:
+            note_or_rest_choices.remove("rest")
+
+        if previous_measure is not None:
+            rest_list = [p for p in previous_measure.getElementsByClass("Rest")]
+            if len(rest_list) > 0:
+                for r in rest_list:
+                    if r.offset != 0 and "rest" in note_or_rest_choices:
+                        note_or_rest_choices.remove("rest")
+            elif "rest" in note_or_rest_choices:
+                note_or_rest_choices.remove("rest")
+
+        if offset_count == 0:
+            tone_type_choices.remove("offbeat non-chord tone")
+            tone_type = "chord tone" if rhythmic_duration > sum(offset_list) / len(offset_list) else random.choice(tone_type_choices)
+            note_or_rest = random.choice(note_or_rest_choices)
+        elif offset_count in offset_list:
+            tone_type_choices.remove("offbeat non-chord tone")
+            tone_type = "chord tone" if rhythmic_duration > sum(offset_list) / len(offset_list) else random.choice(tone_type_choices)
+            note_or_rest = random.choice(note_or_rest_choices)
+            if note_or_rest == "rest" and previous_note is not None and not previous_note.isRest:
+                note_or_rest = "note"
+        else:
+            tone_type_choices.remove("downbeat non-chord tone")
+            tone_type = random.choice(tone_type_choices)
+            note_or_rest = "note"
+
+        return tone_type, note_or_rest
+
+    def note_pitch(compatible_pitches, chord_symbol, previous_note=None): ### really flesh this out
+        pitch_choice = random.choice(compatible_pitches)
+
+        if previous_note is not None and chord_symbol.third is not None and interval.Interval(chord_symbol.third, previous_note.pitch).simpleName == "m2":
+            if previous_note.duration.quarterLength >= 1:
+                pitch_choice = chord_symbol.third
+            else:
+                pitch_choice = random.choice([chord_symbol.third, chord_symbol.fifth])
+
+        return pitch.Pitch(pitch_choice)
+
+    def note_octave(current_pitch, melody_constraint=12, melody_limits=range(57, 83), previous_note=None, first_note=None):
+        potential_octaves = [-2, -1, 0, 1, 2]
+
+        if current_pitch.octave is None:
+            current_pitch.octave = 4
+
+        if first_note is not None:
+            for octave in potential_octaves:
+                if abs(first_note.pitch.midi - (current_pitch.midi + 12 * octave)) > melody_constraint:
+                    potential_octaves.remove(octave)
+
+        if previous_note is not None:
+            for octave in potential_octaves:
+                if abs(previous_note.pitch.midi - (current_pitch.midi + 12 * octave)) > melody_constraint:
+                    potential_octaves.remove(octave)
+
+        for octave in potential_octaves:
+            if not melody_limits[0] <= current_pitch.midi + 12 * octave < melody_limits[1]:
+                potential_octaves.remove(octave)
+
+        if 1 in potential_octaves and -1 in potential_octaves:
+            potential_octaves.extend([1, -1])
+        
+        potential_octaves.extend([0, 0, 0])
+
+        return pitch.Pitch(current_pitch.nameWithOctave).transpose(random.choice(potential_octaves) * 12)
+
+    if not input_chord_progression:
+        raise Exception("No chord progression provided")
+
+    key_sig = input_chord_progression.keySignature
+    subdivision_durations, quarter_durations, offset_list = get_subdivision_durations(input_chord_progression.timeSignature, subdivision)
+
+    first_note = None
+    previous_measure = None
+    for measure in input_chord_progression.getElementsByClass('Measure'):
+        offset_count = 0
+        previous_chord = None
+        previous_chord_scale_pitches = None
+        previous_note = None
+        rhythmic_durations = get_rhythmic_durations(subdivision_durations[:])
+
+        for i, rhythmic_duration in enumerate(rhythmic_durations):
+            chord_symbol = None
+            tone_type, note_or_rest = note_settings(rhythmic_durations, 
+                                                    rhythmic_duration, 
+                                                    offset_list, 
+                                                    offset_count, 
+                                                    previous_note, 
+                                                    previous_measure, 
+                                                    last_measure=True if measure.measureNumber == len(input_chord_progression.getElementsByClass('Measure')) else False)
+            elements = measure.getElementsByOffset(offset_count,
+                                                   offsetEnd=offset_count + rhythmic_duration,
+                                                   includeEndBoundary=False,
+                                                   mustBeginInSpan=False,
+                                                   mustFinishInSpan=False,
+                                                   classList=[harmony.ChordSymbol, chord.Chord])
+            if elements:
+                chord_symbol = elements[0]
+                previous_chord = elements[-1]
+                all_chord_scale_pitches = set()
+                for e in elements:
+                    chord_root, chord_scale_name, chord_scale_pitches = generate_chord_scale(e, key_sig, previous_chord_scale_pitches, diatonic)
+                    all_chord_scale_pitches.update([p.name for p in chord_scale_pitches])
+
+            elif previous_chord:
+                chord_symbol = previous_chord
+                chord_root, chord_scale_name, chord_scale_pitches = generate_chord_scale(chord_symbol, key_sig, previous_chord_scale_pitches, diatonic)
+                all_chord_scale_pitches.update([p.name for p in chord_scale_pitches])
+
+            if note_or_rest == "note" or (i == len(rhythmic_durations) - 1 and len(measure.getElementsByClass(note.Note)) == 0):
+                if chord_symbol:
+                    chosen_pitch = note_pitch(compatible_pitches(elements, all_chord_scale_pitches, tone_type), chord_symbol, previous_note=previous_note)
+                    chosen_note = note.Note(note_octave(chosen_pitch, previous_note=previous_note, first_note=first_note), quarterLength=rhythmic_duration)
+                    measure.insert(offset_count, chosen_note)
+                    if i == 0 and measure.measureNumber == 1:
+                        first_note = chosen_note
+                    previous_note = chosen_note
+                    previous_chord_scale_pitches = all_chord_scale_pitches
+                else:
+                    print(chord_symbol)
+                    raise Exception("No chord symbol found for note")
+            elif note_or_rest == "rest":
+                measure.insert(offset_count, note.Rest(quarterLength=rhythmic_duration))
+            offset_count += rhythmic_duration
+
+        previous_measure = measure
+        ### Clean up measure ###
+        measure = measure.makeRests(fillGaps=True)
+        measure = measure.makeBeams()
+
+    input_chord_progression = input_chord_progression.makeNotation()
+
+    return input_chord_progression
+
+def reharm_chord(chord_object, major_scale, previous_chord=None, diatonic=True, max_num_extensions=None):
+    def calculate_new_dom_divisions(chord_duration):
+        div_list = []
+        prime_numbers = [3, 5, 7, 11, 13, 17]
+
+        if chord_duration in prime_numbers:
+            bigger_split = math.ceil(int(chord_duration) / 2)
+            smaller_split = chord_duration - bigger_split
+            div_list.extend(random.choice([[bigger_split, smaller_split], [smaller_split, bigger_split]]))
+        else:
+            div_list.extend([chord_duration / 2, chord_duration / 2])
+        
+        return div_list
+
+    def common_tone_check(chord_a, chord_b):
+        chord_a_pitches = [p.name for p in chord_a.pitches]
+        chord_b_pitches = [p.name for p in chord_b.pitches]
+        #remove unecessary extensions
+        if all(p in chord_a_pitches for p in chord_b_pitches) == True:
+            return True
+        else:
+            return False
+
+    # Define reharmonization methods
+    reharm_methods = {
+        "thirds": lambda: (None, move_in_thirds(chord_object, major_scale, random.randrange(-1, 2, 1), random.randrange(1, 3, 1), diatonic, max_num_extensions)),
+        "add extensions": lambda: (None, add_extensions(chord_object, major_scale, diatonic, max_num_extensions)),
+        "quality": lambda: (None, change_quality(chord_object, diatonic=diatonic, input_scale=major_scale, max_num_extensions=max_num_extensions)),
+        "tritone": lambda: (None, tritone_sub(chord_object)) if chord_object.pitches == dom_chord.pitches else (None, chord_object),
+        "retroactive dominant": lambda: retroactive_dom(chord_object, chord_object.duration.quarterLength, major_scale, diatonic) if chord_object.duration.quarterLength >= 2 else (None, chord_object)
+    }
+
+    if diatonic:
+        reharm_methods.pop("quality")
+        reharm_methods.pop("tritone")
+        reharm_methods.pop("retroactive dominant")
+    if chord_object.duration.quarterLength >= 2 and reharm_methods.get("retroactive dominant"):
+        reharm_methods.pop("retroactive dominant")
+
+    dom_chord = generate_chord([major_scale.getDominant().name], [""])
+
+    iter_num = 2
+    max_attempts = 5
+    attempt = 0
+    previous_reharm = None
+    previous_new_dom = None
+    while iter_num > 0:
+        random_choice = random.choice(list(reharm_methods.keys()))
+        new_dom, reharm = reharm_methods[random_choice]()
+        previous_reharm = chord.Chord(reharm.pitches)
+        previous_new_dom = chord.Chord(new_dom.pitches) if new_dom is not None else None
+        attempt = 0
+        while attempt < max_attempts:
+            try:
+                reharm = fix_chord_spelling(reharm)
+                chord_symbol = harmony.chordSymbolFromChord(reharm)
+                if new_dom:
+                    new_dom = fix_chord_spelling(new_dom)
+                    new_dom_chord_symbol = harmony.chordSymbolFromChord(new_dom)
+                iter_num -= 1
+            except pitch.AccidentalException:
+                reharm = previous_reharm
+                new_dom = previous_new_dom
+            finally:
+                attempt += 1
+                if attempt >= max_attempts:
+                    break
+
+    # if two chords in a row have the same notes, combine them
+    if previous_chord and common_tone_check(previous_chord, reharm):
+        return None
+
+    reharm.duration.quarterLength = chord_object.duration.quarterLength
+    chord_symbol.duration.quarterLength = chord_object.duration.quarterLength
+
+    if new_dom:
+        divisions = calculate_new_dom_divisions(reharm.duration.quarterLength) # add chord symbols
+        new_dom_chord_symbol.duration.quarterLength = divisions[0]
+        chord_symbol.duration.quarterLength = divisions[1]
+        return new_dom_chord_symbol, chord_symbol
+    
+    return chord_symbol
+           
+def reharm_progression(chord_progression, diatonic=True, output_type="written"):
+    def calculate_new_dom_divisions(chord_duration):
+        div_list = []
+        prime_numbers = [3, 5, 7, 11, 13, 17]
+
+        if chord_duration in prime_numbers:
+            bigger_split = math.ceil(int(chord_duration) / 2)
+            smaller_split = chord_duration - bigger_split
+            div_list.extend(random.choice([[bigger_split, smaller_split], [smaller_split, bigger_split]]))
+        else:
+            div_list.extend([chord_duration / 2, chord_duration / 2])
+        
+        return div_list
+
+    def create_slash():
+        slash_note = note.Note("B4") if user_clef == clef.TrebleClef() else note.Note("D3")
+        slash_note.notehead = "slash"
+        slash_note.duration.quarterLength = reharm.duration.quarterLength
+        return slash_note
+
+    def common_tone_check(chord_a, chord_b):
+        chord_a_pitches = [p.name for p in chord_a.pitches]
+        chord_b_pitches = [p.name for p in chord_b.pitches]
+        #remove unecessary extensions
+        if all(p in chord_b_pitches for p in chord_a_pitches) == True:
+            return True
+        else:
+            return False
+
+    # Define reharmonization methods
+    reharm_methods = {
+        "thirds": lambda: (None, move_in_thirds(reharm, major_scale, random.randrange(-1, 2, 1), random.randrange(1, 3, 1))),
+        "add extensions": lambda: (None, add_extensions(reharm, major_scale, diatonic)),
+        "quality": lambda: (None, change_quality(reharm)) if diatonic else (None, reharm),
+        "tritone": lambda: (None, tritone_sub(reharm)) if chord_object.pithces == dom_chord.pitches else (None, reharm),
+        "retroactive dominant": lambda: retroactive_dom(reharm, chord_object.duration.quarterLength, major_scale, diatonic) if chord_object.duration.quarterLength >= 2 else (None, reharm)
+    }
+
+    major_scale = chord_progression.keySignature.getScale()
+    dom_chord = generate_chord([major_scale.getDominant().name], [""])
+
+    for measure in chord_progression:
+        prev_chord = None
+        if measure.measureNumber is not None:
+            for object_number in range(len(measure)-1, -1, -1):  # iterate over measure in reverse
+                chord_object = measure[object_number]
+                reharm = chord_object.simplifyEnharmonics()
+
+                iter_num = 2
+                max_attempts = 5
+                attempt = 0
+                previous_reharm = None
+                previous_new_dom = None
+                while iter_num > 0:
+                    random_choice = random.choice(list(reharm_methods.keys())) if diatonic else random.choice(list(reharm_methods.keys())[:2])
+                    new_dom, reharm = reharm_methods[random_choice]()
+                    previous_reharm = chord.Chord(reharm.pitches)
+                    previous_new_dom = chord.Chord(new_dom.pitches) if new_dom is not None else None
+                    attempt = 0
+                    while attempt < max_attempts:
+                        try:
+                            reharm = fix_chord_spelling(reharm)
+                            chord_symbol = harmony.chordSymbolFromChord(reharm)
+                            if new_dom:
+                                new_dom = fix_chord_spelling(new_dom)
+                                new_dom_chord_symbol = harmony.chordSymbolFromChord(new_dom)
+                            iter_num -= 1
+                        except pitch.AccidentalException:
+                            reharm = previous_reharm
+                            new_dom = previous_new_dom
+                        finally:
+                            attempt += 1
+                            if attempt >= max_attempts:
+                                break
+                
+                # if two chords in a row have the same notes, combine them
+                if prev_chord and common_tone_check(prev_chord, reharm) == True:
+                    reharm.duration.quarterLength += prev_chord.duration.quarterLength
+                    measure.remove(measure[object_number+1])
+
+                reharm.duration.quarterLength = chord_object.duration.quarterLength
+
+                if output_type != "written":  # add chord symbols
+                    if new_dom:
+                        divisions = calculate_new_dom_divisions(reharm.duration.quarterLength)
+                        new_dom.duration.quarterLength = divisions[0]
+                        chord_symbol.duration.quarterLength = divisions[1]
+                        chord_progression.measure(measure.measureNumber).replace(chord_object, new_dom_chord_symbol)
+                        chord_progression.measure(measure.measureNumber).insert(chord_object + reharm.duration.quarterLength, chord_symbol)
+                        if output_type == "slashes":
+                            chord_progression.measure(measure.measureNumber).replace(chord_object, create_slash())
+                            chord_progression.measure(measure.measureNumber).insert(chord_object + reharm.duration.quarterLength, create_slash())                 
+                    else:
+                        chord_progression.measure(measure.measureNumber).replace(chord_object, chord_symbol)
+                        if output_type == "slashes":
+                            chord_progression.measure(measure.measureNumber).replace(chord_object, create_slash())
+
+                else:
+                    if new_dom:
+                        divisions = calculate_new_dom_divisions(reharm.duration.quarterLength)
+                        new_dom.duration.quarterLength = divisions[0]
+                        reharm.duration.quarterLength = divisions[1]
+                        chord_progression.measure(measure.measureNumber).replace(chord_object, new_dom)
+                        chord_progression.measure(measure.measureNumber).insert(chord_object + reharm.duration.quarterLength, reharm)
+                    else:
+                        chord_progression.measure(measure.measureNumber).replace(chord_object, reharm)
+
+                prev_chord = reharm
+
+    return chord_progression
+
+def move_in_thirds(input_chord, input_scale, direction, iterate=2, diatonic=True, max_num_extensions=None):
+    if direction == 0 or get_chord_quality(input_chord) not in chord_interval_list:
         return input_chord
 
-    new_root_scale_degree = input_scale.getScaleDegreeFromPitch(new_root)
-
-    diatonic_majors = [1, 4, 5]
-    diatonic_minors = [2, 3, 6]
-
-    if new_root_scale_degree in diatonic_majors:
-        return generate_chord([new_root], [""])
-    elif new_root_scale_degree in diatonic_minors:
-        return generate_chord([new_root], ["m"])
-    elif new_root_scale_degree == 7: #will have to check if non-diatonic is allowed then change it to flat 7
-        return generate_chord([new_root], ["dim"])
-
-def change_quality(input_chord, input_quality = None, non_diatonic = False): #add condition for diatonicism
-
-    chord_intervals = input_chord.annotateIntervals(inPlace=False)
-    chord_intervals = [ly.text for ly in reversed(chord_intervals.lyrics)]
-
-    if input_quality != None:
-        return generate_chord([input_chord[0].nameWithOctave], [input_quality])
-    
-    else:
-        if bool(set([9, 11, 13]) & set(chord_intervals)) == True:
-            quality_choices = list(range(37, 58))
-        elif bool(set([7]) & set(chord_intervals)) == True:
-            quality_choices = list(range(9, 37))
-        else:
-            quality_choices = list(range(0, 9))
-            quality_choices.remove(3)
-
-        if chord_intervals in list(chord_by_interval_dict.values()):
-            quality_choices.remove(list(chord_by_interval_dict.values()).index(chord_intervals)) #remove original quality from choices
-    
-        new_chord = generate_chord([input_chord[0].nameWithOctave], [chord_interval_list[random.choice(quality_choices)]])
+    semitone_list = [interval.Interval(n) for n in chord_by_interval_dict[get_chord_quality(input_chord)]]
+    thirds_as_string = semitone_list[0].simpleName
+    for i in range(len(semitone_list) - 1):
+        thirds_as_string += interval.subtract([semitone_list[i + 1], semitone_list[i]]).simpleName
         
-        return new_chord
+    if not all(i == '3' for i in thirds_as_string if i.isdigit()):
+        return input_chord
 
-def add_extensions(input_chord, input_scale, non_diatonic = False): #maybe instead of adding a bunch of extensions, we only add the non-diatonic ones
+    thirds_pattern_dict = {
+        "major/minor": 'm3M3m3M3m3M3m3',
+        "dim/dom": 'M3m3m3M3',
+        "dim": 'm3m3m3m3',
+        "aug": 'M3M3M3M3',
+        "lydian dominant": 'M3m3m3M3M3m3'
+    }
+
+    if diatonic:
+        thirds_pattern_dict.pop("dim")
+        thirds_pattern_dict.pop("aug")
+        thirds_pattern_dict.pop("lydian dominant")
+
+    if next((pattern for pattern in thirds_pattern_dict if thirds_as_string in thirds_pattern_dict[pattern]), None) == None:
+        return input_chord
+
+    re_pattern = re.compile('M3|m3')
+    thirds_list = re_pattern.findall(thirds_as_string)
+    keep_extensions = random.choice([True, False]) if max_num_extensions is None else True
+    index_from_direction = 0 if direction == -1 else -1
+    scale_pitches = [p.name for p in input_scale.pitches]
+    new_chord = chord.Chord(input_chord.pitches)
+
+    for i in range(iterate):
+        new_interval = (3 if thirds_list[index_from_direction] == 'M3' else 4) * direction
+        new_pitch = interval.transposePitch(new_chord[index_from_direction].pitch, new_interval)
+        for p in new_chord.pitches:
+            if interval.Interval(p, new_pitch).simpleName == 'm2':
+                break
+        if diatonic and new_pitch.name not in scale_pitches:
+            break
+        new_chord.add(new_pitch)
+        thirds_list.append(interval.Interval(new_interval).simpleName) if direction == 1 else thirds_list.insert(0, interval.Interval(new_interval).simpleName)
+
+    if not keep_extensions:
+        new_chord = chord.Chord(new_chord.pitches[:3])
+    if max_num_extensions is not None:
+        new_chord = chord.Chord(new_chord.pitches[:3 + max_num_extensions])
+
+    return new_chord
+
+def change_quality(input_chord, input_quality=None, diatonic=True, input_scale=None, max_num_extensions=None):
+    chord_intervals = [int(ly.text) for ly in reversed(input_chord.annotateIntervals(inPlace=False).lyrics)]
+
+    if input_quality is not None:
+        return generate_chord([input_chord.root()], [input_quality])
+    
+    if max_num_extensions is not None:
+        chord_intervals = chord_intervals[:3 + max_num_extensions]
+
+    quality_ranges = {
+        frozenset([9, 11, 13]): range(37, 58),
+        frozenset([7]): range(9, 37),
+        frozenset(): list(filter(lambda x: x != 3, range(0, 9)))
+    }
+
+    quality_choices_list = None
+    for interval_set, quality_range in quality_ranges.items():
+        if set(chord_intervals) & interval_set:
+            quality_choices_list = list(quality_range)
+            break
+        else:
+            quality_choices_list = list(quality_ranges[frozenset()])
+
+    input_scale_pitches = [p.name for p in input_scale.pitches]
+    for choice in quality_choices_list:
+        if max_num_extensions is not None and len(chord_by_interval_dict[chord_interval_list[choice]]) != len(chord_intervals):
+            quality_choices_list.remove(choice)
+        if chord_by_interval_dict[chord_interval_list[choice]] == chord_intervals:
+            quality_choices_list.remove(choice)  # remove original quality from choices
+        if diatonic and all(p in input_scale_pitches for p in generate_chord([input_chord.root()], chord_interval_list[choice]).pitchNames):
+            quality_choices_list.remove(choice)
+    
+    new_chord = generate_chord([input_chord.root()], chord_interval_list[quality_choices_list[0]:quality_choices_list[-1]])
+
+    return new_chord
+
+def add_extensions(input_chord, input_scale, diatonic=True, max_num_extensions=None):
+    def extension_check(new_chord, max_num_extensions):
+        if len(new_chord) >= 7:
+            return False
+        elif max_num_extensions is not None and len(new_chord) >= (3 + max_num_extensions):
+            return False
+        else:
+            return True
+        
     new_chord = chord.Chord(input_chord.pitches)
     iterate_number = random.choice([1, 1, 1, 1, 2, 2, 2, 3, 4])
-    new_mode = None
 
-    if input_chord.quality == "major":
-        new_mode = scale.LydianScale(input_chord[0])
-    elif input_chord.quality == "minor":
-        new_mode = scale.DorianScale(input_chord[0])
-    elif input_chord.quality == "augmented":
-        new_mode = scale.WholeToneScale(input_chord[0])
-    elif input_chord.quality == "diminished": 
-        if input_chord.isHalfDiminishedSeventh == True:
-            new_mode = dorian_flat5_scale._net.realizePitch(input_chord[0])
-        elif input_chord.isDiminishedSeventh == True:
-            new_mode = whole_half_diminished_scale._net.realizePitch(input_chord[0])
-        elif input_chord.isTriad == True:
-            new_mode = dorian_flat5_scale._net.realizePitch(input_chord[0])
-    else:
-        new_mode = scale.DiatonicScale(input_chord[0])
+    quality_to_scale = {
+        "major": scale.LydianScale,
+        "minor": scale.DorianScale,
+        "augmented": scale.WholeToneScale,
+        "diminished": dorian_flat5_scale._net.realizePitch if input_chord.isTriad or input_chord.isHalfDiminishedSeventh else whole_half_diminished_scale._net.realizePitch,
+        "default": scale.DiatonicScale
+    }
 
-    if non_diatonic == True:
-        ref_scale = new_mode
-    else:
-        ref_scale = input_scale
+    ref_scale = quality_to_scale.get(input_chord.quality, quality_to_scale["default"])(input_chord[0]) if not diatonic else input_scale
 
-    if len(new_chord) < 7 and ref_scale != None:
-        for i in range(iterate_number + 1):
-            new_extension = ref_scale.nextPitch(new_chord[-1].nameWithOctave, scale.Direction.ASCENDING, stepSize = 2)
+    if extension_check(new_chord, max_num_extensions):
+        for _ in range(iterate_number + 1):
+            new_extension = ref_scale.nextPitch(new_chord[-1].nameWithOctave, scale.Direction.ASCENDING, stepSize=2)
+            if interval.Interval(new_chord[1], new_extension).simpleName == "m2":
+                new_extension = ref_scale.nextPitch(new_chord[-1].nameWithOctave, scale.Direction.ASCENDING, stepSize=4)
             if new_extension.simplifyEnharmonic().name not in new_chord.pitchNames:
                 new_chord.add(new_extension.simplifyEnharmonic())
-            if len(new_chord) == 7:
+            if not extension_check(new_chord, max_num_extensions):
                 break
 
-    return new_chord.simplifyEnharmonics()
+    return fix_chord_spelling(new_chord)
 
 def tritone_sub(input_chord):
     trione_chord = input_chord.transpose("d5")
     return trione_chord.simplifyEnharmonics()
 
-def retroactive_dom(input_chord, chord_duration, input_scale, non_diatonic = False): #add condition for diatonicism
-    ref_scale = scale.DiatonicScale(input_chord[0])
+def retroactive_dom(input_chord, chord_duration, input_scale, diatonic = True): #add condition for diatonicism
+    ref_scale = scale.DiatonicScale(chord.Chord(input_chord.pitches).root())
     dom_chord = generate_chord([ref_scale.getDominant().nameWithOctave], [""])
     new_chord = chord.Chord(input_chord.pitches)
     new_chord.duration.quarterLength = chord_duration / 2
     dom_chord.duration.quarterLength = chord_duration / 2
     return dom_chord.simplifyEnharmonics(), new_chord.simplifyEnharmonics()
 
-def generate_time_elements(denominators = [], numerators = []):
-    #create time signature
-    if len(denominators) != 0:
-        denominator_select = random.choice(denominators)
-    else:
-        denominator_choices = [4, 8] #we will have to vary complexity
-        denominator_select = random.choice(denominator_choices)
-    
-    if len(numerators) != 0:
-        numerator_select = random.choice(numerators)
-    else:
-        if denominator_select == 4:
-            numerator_choices = [2, 3, 4, 5, 6, 7]
-        elif denominator_select == 8:
-            numerator_choices = [5, 6, 7, 9, 10, 12]
-        numerator_select = random.choice(numerator_choices)
+def generate_time_elements(numerators=[], denominators=[]):
+    # Helper function to choose a random value from user-supplied or default choices
+    def choose_value(default_choices, user_choices):
+        return random.choice(user_choices if user_choices else default_choices)
 
-    time_sig_string = str(numerator_select) + "/" + str(denominator_select)
+    # Define default choices for numerators and denominators
+    default_denominators = [4, 8]
+    default_numerators = {
+        4: [2, 3, 4, 5, 6, 7],
+        8: [5, 6, 7, 9, 10, 12]
+    }
+
+    # Select denominator and corresponding numerator
+    denominator = choose_value(default_denominators, denominators)
+    numerator = choose_value(default_numerators[denominator], numerators)
+
+    # Create time signature
+    time_sig_string = f"{numerator}/{denominator}"
     time_sig = meter.TimeSignature(time_sig_string)
-    
-    #create meter sequence
+
+#create meter sequence
     prime_numbers = [3, 5, 7, 11, 13]
     meter_sequence = meter.MeterSequence(time_sig_string)
     if meter_sequence.numerator in prime_numbers and meter_sequence.numerator > 4:
         meter_seq_options = meter_sequence.getPartitionOptions()[:math.floor(meter_sequence.numerator / 2)]
-        meter_sequence = meter.MeterSequence(random.choice(meter_seq_options))
+        meter_division = list(random.choice(meter_seq_options))
     else:
-        meter_sequence = meter.MeterSequence(meter_sequence.getPartitionOptions()[0])
-    meter_division_count = str(meter_sequence).count("+") + 1
+        meter_division = list(meter_sequence.getPartitionOptions()[0])
+    meter_division_count = len(meter_division)
+
+    # Update time signature
+    meter_sequence.load("+".join(meter_division))
     time_sig.beamSequence = meter_sequence
     time_sig.beatSequence = meter_sequence
 
-    return time_sig, meter_division_count, meter_sequence
-
+    return time_sig, meter_division_count, meter_division
 
 ### Auxillary Functions ###
 
-def fix_chord_spelling(chord_item):
-        chord_item.root(chord_item.bass())
-        chord_item.sortAscending()
-        pitch_list = list(chord_item.pitches)
-        fixed_chord = chord.Chord()
-        for num, p in enumerate(pitch_list):
-            if num == 0:
-                fixed_chord.add(p)
+def get_chord_quality(chord_object):
+    chord_symbol_figure = harmony.chordSymbolFromChord(chord_object).figure
+    if chord_symbol_figure == 'Chord Symbol Cannot Be Identified': #brute force method
+        interval_numbers = [ly.text for ly in reversed(chord_object.annotateIntervals(inPlace=False, stripSpecifiers=True).lyrics)]
+        chord_intervals = [ly.text for ly in reversed(chord_object.annotateIntervals(inPlace=False, stripSpecifiers=False).lyrics)]
+        rewritten_chord_intervals = [chord_intervals[0]]
+        octave_flag = 0
+        for index in range(1, len(chord_intervals)):
+            if int(interval_numbers[index - 1]) > int(interval_numbers[index]) or octave_flag == 1:
+                interval_quality = chord_intervals[index].replace(interval_numbers[index], "")
+                fixed_interval = interval_quality + str(int(interval_numbers[index]) + 7)
+                rewritten_chord_intervals.append(fixed_interval)
+                octave_flag = 1
             else:
-                interval_check = interval.Interval(pitchStart=pitch_list[0], pitchEnd=p).name
-                if interval_check in ["d4", "A6", "d8", "A8", "A12", "dd10", "d9", "dd11"]:
-                    respell = pitch.Pitch(p.getEnharmonic())
-                elif interval_check in ["A5", "A4"] and num > 2:
-                    respell = pitch.Pitch(p.getEnharmonic()) 
-                elif interval_check in ["m6", "dd6"] and num < 3:
-                    respell = pitch.Pitch(p.getEnharmonic())
-                elif interval_check in ["m10", "m3",] and num > 2:
-                    sharp_nine = interval.Interval("A9")
-                    sharp_nine.pitchStart = pitch_list[0]
-                    respell = sharp_nine.pitchEnd
-                elif interval_check in ["dd7"] == 2:
-                    respell = pitch.Pitch(p.getEnharmonic())
-                else:
-                    respell = p
-                if "--" not in respell.nameWithOctave:
-                    fixed_chord.add(respell)
-                else:
-                    fixed_chord.add(pitch.Pitch(respell.getEnharmonic()))
-        fixed_chord.root(fixed_chord.bass())
-        fixed_chord.sortAscending()
+                rewritten_chord_intervals.append(chord_intervals[index])
+        try:
+            return list(chord_by_interval_dict.keys())[list(chord_by_interval_dict.values()).index(rewritten_chord_intervals)]
+        except ValueError:
+            return get_chord_quality(fix_chord_spelling(chord_object))
+    else:
+        chord_symbol_figure = chord_symbol_figure.replace(chord_object.root().name, "")
+        return chord_symbol_figure
 
-        fixed_chord_intervals = fixed_chord.annotateIntervals(inPlace=False, stripSpecifiers=False)
-        fixed_chord_intervals = [ly.text for ly in reversed(fixed_chord_intervals.lyrics)]
+def add_enharmonic_equivalents(pitch_list):
+    pitch_names_with_enharmonics = []
+    for single_pitch in pitch_list:
+        single_pitch = pitch.Pitch(single_pitch)
+        pitch_names_with_enharmonics.append(single_pitch.name)
+        pitch_names_with_enharmonics.extend(e.name for e in single_pitch.getAllCommonEnharmonics(alterLimit=2))
+    return pitch_names_with_enharmonics
 
-        # print(fixed_chord)
-        # print(fixed_chord_intervals)
-        return fixed_chord
+def get_rhythmic_durations(subdivision_list):
+    iterations = random.randrange(0, len(subdivision_list) - 1)
+    for _ in range(iterations):
+        random_index = random.randrange(0, len(subdivision_list))
+        if len(subdivision_list) == 1:
+            break
+        elif random_index != 0 and random_index != len(subdivision_list) - 1:
+            left_or_right_index = subdivision_list[random_index + random.choice([-1, 1])]
+            subdivision_list[random_index] = left_or_right_index + subdivision_list[random_index]
+            subdivision_list.pop(subdivision_list.index(left_or_right_index))
+        elif random_index == 0:
+            subdivision_list[random_index] = subdivision_list[random_index + 1] + subdivision_list[random_index]
+            subdivision_list.pop(random_index + 1)
+        elif random_index == len(subdivision_list) - 1:
+            subdivision_list[random_index] = subdivision_list[random_index - 1] + subdivision_list[random_index]
+            subdivision_list.pop(random_index - 1)
+    return subdivision_list
+
+def get_subdivision_durations(time_signature, subdivision=4):
+    duration_filter = {4: [1.5, 1.0], 8: [0.5, 0.5], 16: [0.25, 0.25]}
+
+    offset_list = time_signature.getBeatOffsets()
+    offset_list.append(time_signature.barDuration.quarterLength)
+    beat_durations = []
+    quarter_durations = []
+
+    for i in range(len(offset_list) - 1):
+        beat_duration = offset_list[i + 1] - offset_list[i]
+        if beat_duration > duration_filter[subdivision][0]:
+            subbeats = [duration_filter[subdivision][1]]*int(beat_duration / duration_filter[subdivision][1])
+            beat_durations.extend(subbeats)
+        else:
+            beat_durations.append(beat_duration)
+
+        # Record quarter durations
+        if beat_duration > duration_filter[4][0]:
+            quarter_subbeats = [duration_filter[4][1]]*int(beat_duration / duration_filter[4][1])
+            quarter_durations.extend(quarter_subbeats)
+        else:
+            quarter_durations.append(beat_duration)
+
+    return beat_durations, quarter_durations, offset_list
+
+def fix_chord_spelling(chord_object):
+    def respell_check(chord_object):
+        pitch_strings = ''.join(chord_object.pitchNames)
+        if any([p.accidental.modifier in ["##", "###", "####", "--", "---", "----"] for p in chord_object.pitches if p.accidental is not None]):
+            return True
+        elif chord_object.root().name in ["F-", "C-", "E#", "B#"]:
+            return True
+        else:
+            return False
+
+    if chord_object.root().name != chord_object.bass().name:
+        chord_object.add(chord_object.root().name + "1")
+    pitch_strings = ''.join(chord_object.pitchNames)
+    if any(pitch_strings.count(p) > 1 for p in pitch_strings if p.isalpha()):
+        chord_object = chord_object.simplifyEnharmonics()
+    if respell_check(chord_object):
+        fixed_chord = chord.Chord()
+        for p in chord_object.pitches:
+            possible_enharmonics = p.getAllCommonEnharmonics(alterLimit=1)
+            if len(possible_enharmonics) > 0:
+                fixed_chord.add(p.getAllCommonEnharmonics(alterLimit=1)[0])
+            else:
+                fixed_chord.add(p)
+        fixed_chord = fixed_chord.closedPosition(forceOctave=4)
+        return fixed_chord.simplifyEnharmonics()
+    else:
+        chord_object = chord_object.closedPosition(forceOctave=4)
+        return chord_object
 
 def convert_to_roman_numerals(chord_item, input_key):
     fixed_chord = fix_chord_spelling(chord_item)
@@ -1155,3 +1644,4 @@ def answer_non_diatonic_chord(q_dict, user_level, output="string", mc=False):
         correct_answer_index = answer_list.index(correct_answer) + 1
 
         return answer_list, correct_answer_index
+    
