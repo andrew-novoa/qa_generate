@@ -10,11 +10,10 @@ from qa_util import *
 from theory import *
 
 #149 possible combinations#
-def generate_question(input_question_type, input_answer_type, input_user_level): #will need to take into consideration the blank notes
-
+def generate_question(input_question_type, input_answer_type, input_user_level):
     if input_question_type == "text":
         question_options_dict = {
-            "text":{
+            "text": {
             "chord intervals": ["What are the intervals that make up a *chord*?", "chord"],
             "chord intervals half steps": ["How many half steps are there between each note in a *chord*?", "chord"],
             "interval semitones": ["How many semitones make up a *interval*?", "interval"],
@@ -654,61 +653,81 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
 
         if input_question_type == "text":
             if question_dict[0] == "play pitch":
-                return answer_play_pitch(question_dict)
-            
+                return m21_to_base64(question_dict[2])
+
             elif question_dict[0] == "play chord tone":
-                return question_dict[2].measure(1)[0].getChordStep(question_dict[3]).name
-            
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2].measure(1)[0].getChordStep(question_dict[3]))
+                return m21_to_base64(new_stream)
+
             elif question_dict[0] == "play second note in interval":
-                correct_note = question_dict[2][0].measure(1)[1].pitch
-                return correct_note.name
-            
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2][0].measure(1)[1])
+                return m21_to_base64(new_stream)
+
             elif question_dict[0] == "play interval":
                 pass
 
             elif question_dict[0] == "play scale degree":
-                pitched_scale = scale.ConcreteScale(pitches = question_dict[2][1]._net.realizePitch(question_dict[2][0].measure(1).pitches[0]))
+                pitched_scale = scale.ConcreteScale(
+                    pitches=question_dict[2][1]._net.realizePitch(
+                        question_dict[2][0].measure(1).pitches[0]
+                    )
+                )
                 if question_dict[0] == "play scale degree":
-                    return pitched_scale.pitchFromDegree(question_dict[3]).name
-                
+                    new_stream = stream.Stream()
+                    new_stream.append(pitched_scale.pitchFromDegree(question_dict[3]))
+                    return m21_to_base64(new_stream)
+
             elif question_dict[0] == "play arp chord tone":
-                return question_dict[2][2].getChordStep(question_dict[3])
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2][2].getChordStep(question_dict[3]))
+                return m21_to_base64(new_stream)
 
         elif input_question_type == "note":
             if question_dict[0] == "play pitch":
-                return answer_play_pitch(question_dict)
-                
+                return m21_to_base64(question_dict[2])
+
         elif input_question_type == "chord":
             if question_dict[0] == "play chord tone":
-                return question_dict[2].measure(1)[0].getChordStep(question_dict[3]).name
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2].measure(1)[0].getChordStep(question_dict[3]))
+                return m21_to_base64(new_stream)
 
         elif input_question_type == "interval":
             if question_dict[0] == "play interval":
-                correct_note = question_dict[2][0].flatten().notes.stream()[1].pitch
-                return correct_note.name
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2][0].flatten().notes.stream()[1])
+                return m21_to_base64(new_stream)
 
         elif input_question_type == "scale":
-            pitched_scale = scale.ConcreteScale(pitches = question_dict[2][1]._net.realizePitch(question_dict[2][0].measure(1).pitches[0]))
+            pitched_scale = scale.ConcreteScale(
+                pitches=question_dict[2][1]._net.realizePitch(
+                    question_dict[2][0].measure(1).pitches[0]
+                )
+            )
             if question_dict[0] == "play scale degree":
-                return pitched_scale.pitchFromDegree(question_dict[3]).name
+                new_stream = stream.Stream()
+                new_stream.append(note.Note(pitched_scale.pitchFromDegree(question_dict[3])))
+                return m21_to_base64(new_stream)
 
         elif input_question_type == "arpeggio":
             if question_dict[0] == "play chord tone":
-                return question_dict[2][2].getChordStep(question_dict[3])
+                new_stream = stream.Stream()
+                new_stream.append(question_dict[2][2].getChordStep(question_dict[3]))
+                return m21_to_base64(new_stream)
 
     def generate_record_answer(input_question_type, question_dict, input_user_level): #complete
 
         if input_question_type == "text":
             if question_dict[0] == "play pitch":
-                return answer_play_pitch(question_dict)
+                return m21_to_base64(question_dict[2])
             
             elif question_dict[0] == "play chord":
-                chord_symbol = harmony.chordSymbolFromChord(question_dict[2].measure(1)[0])
-                return chord_symbol.figure
+                return m21_to_base64(question_dict[2])
             
             elif question_dict[0] == "play scale":
-                scale_pitch_list = [n.name for n in question_dict[2][0].pitches]
-                return scale_pitch_list
+                return m21_to_base64(question_dict[2][0])
             
             elif question_dict[0] == "play arp":
                 return m21_to_base64(question_dict[2][1])
@@ -719,12 +738,11 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
 
         elif input_question_type == "note":
             if question_dict[0] == "play pitch":
-                return answer_play_pitch(question_dict)
+                return m21_to_base64(question_dict[2])
                    
         elif input_question_type == "chord":
             if question_dict[0] == "play chord":
-                chord_symbol = harmony.chordSymbolFromChord(question_dict[2].measure(1)[0])
-                return chord_symbol.figure
+                return m21_to_base64(question_dict[2])
 
         elif input_question_type == "chord progression":
             if question_dict[0] == "play progression":
@@ -735,9 +753,8 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
                 return m21_to_base64(question_dict[2][0])
 
         elif input_question_type == "scale":
-            scale_pitch_list = [n.name for n in question_dict[2][0].pitches]
             if question_dict[0] == "play scale":
-                return scale_pitch_list
+                return m21_to_base64(question_dict[2][0])
             
         elif input_question_type == "excerpt":
             return m21_to_base64(question_dict[2])
@@ -1956,11 +1973,14 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
     
     def translate_text(text, language):
         if language == "es":
-            translator = Translator()
-            translation = translator.translate(text, dest=language)
-            if type(text) == list:
-                return [t.text for t in translation]
-            return translation.text
+            try:
+                translator = Translator()
+                translation = translator.translate(text, dest=language)
+                if type(text) == list:
+                    return [t.text for t in translation]
+                return translation.text
+            except:
+                return text
         return text
 
     # Create prompt text
@@ -1982,16 +2002,16 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
     # Generate answer
     answer_elements = generate_answer(answer_type, question_type, question_elements, input_user_level=user_level)
 
-    spanish_prompt, spanish_text = translate_text([prompt_text, question_elements[1]], "es")
+    # spanish_prompt, spanish_text = translate_text([prompt_text, question_elements[1]], "es")
 
     # Create question dictionary
     question_type = question_type if question_type in ["text", "audio"] else "xml"
     question_dict = question_structure[question_type]
     question_dict.update({
         "question_text_en": question_elements[1],
-        "question_text_es": spanish_text,
+        # "question_text_es": spanish_text,
         "prompt_text_en": prompt_text,
-        "prompt_text_es": spanish_prompt,
+        # "prompt_text_es": spanish_prompt,
         "audio_url" if question_type == "audio" else "xml_data": question_render
     })
 
