@@ -681,7 +681,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
 
             elif question_dict[0] == "play arp chord tone":
                 new_stream = stream.Stream()
-                new_stream.append(question_dict[2][2].getChordStep(question_dict[3]))
+                new_stream.append(note.Note(question_dict[2][2].getChordStep(question_dict[3])))
                 return m21_to_base64(new_stream)
 
         elif input_question_type == "note":
@@ -691,7 +691,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
         elif input_question_type == "chord":
             if question_dict[0] == "play chord tone":
                 new_stream = stream.Stream()
-                new_stream.append(question_dict[2].measure(1)[0].getChordStep(question_dict[3]))
+                new_stream.append(note.Note(question_dict[2].measure(1)[0].getChordStep(question_dict[3])))
                 return m21_to_base64(new_stream)
 
         elif input_question_type == "interval":
@@ -714,7 +714,7 @@ def generate_answer(input_answer_type, input_question_type, question_dict, input
         elif input_question_type == "arpeggio":
             if question_dict[0] == "play chord tone":
                 new_stream = stream.Stream()
-                new_stream.append(question_dict[2][2].getChordStep(question_dict[3]))
+                new_stream.append(note.Note(question_dict[2][2].getChordStep(question_dict[3])))
                 return m21_to_base64(new_stream)
 
     def generate_record_answer(input_question_type, question_dict, input_user_level): #complete
@@ -2002,7 +2002,7 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
     # Generate answer
     answer_elements = generate_answer(answer_type, question_type, question_elements, input_user_level=user_level)
 
-    # spanish_prompt, spanish_text = translate_text([prompt_text, question_elements[1]], "es")
+    spanish_prompt, spanish_text = translate_text([prompt_text, question_elements[1]], "es")
 
     # Create question dictionary
     question_type = question_type if question_type in ["text", "audio"] else "xml"
@@ -2031,9 +2031,9 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
         elif answer_type.startswith("mc "):
             is_mc_audio = answer_type == "mc audio"
             return [
-                create_mc_answer(num, answer, num == answer_elements[1])
+                create_mc_answer(num + 1, answer, str(num + 1) == answer_elements[1])
                 if answer_type == "mc text"
-                else {"audio_url" if is_mc_audio else "xml_data": answer, "correct_answer": num == answer_elements[1]}
+                else {"audio_url" if is_mc_audio else "xml_data": answer, "correct_answer": str(num + 1) == answer_elements[1]}
                 for num, answer in enumerate(answer_elements[0])
             ]
         elif answer_type == "piano":
@@ -2046,5 +2046,3 @@ def generate_screen(question_type, answer_type, user_level, user_language="en"):
     answer_dict["answers"] = create_answer(answer_type, answer_elements)
 
     return question_dict, answer_dict
-
-
